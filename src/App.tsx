@@ -46,7 +46,9 @@ import {
   Bookmark,
   Activity,
   Award,
-  Flag
+  Flag,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { motion, AnimatePresence, useScroll, useSpring } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
@@ -2605,7 +2607,7 @@ export default function App() {
               onClick={toggleDarkMode}
               className={cn("p-2 rounded-full transition-colors", isDarkMode ? "hover:bg-slate-800" : "hover:bg-slate-100")}
             >
-              {isDarkMode ? <Home size={22} /> : <TrendingUp size={22} className="rotate-90" />}
+              {isDarkMode ? <Sun size={22} className="text-yellow-400" /> : <Moon size={22} className="text-slate-600" />}
             </button>
             
             <div className="h-8 w-px bg-slate-200 mx-1 hidden md:block" />
