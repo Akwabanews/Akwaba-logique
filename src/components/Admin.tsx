@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Lock, 
   Plus, 
@@ -46,14 +46,18 @@ import {
   List as ListIcon,
   TrendingUp,
   Mic,
-  Music
+  Music,
+  Headset
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Article, Event, SiteSettings, Comment, Subscriber, MediaAsset } from '../types';
+import { Article, Event, SiteSettings, Comment, Subscriber, MediaAsset, SupportMessage } from '../types';
 import { cn } from '../lib/utils';
 import ReactMarkdown from 'react-markdown';
+import { format } from 'date-fns';
+import { fr } from 'date-fns/locale';
+import { FirestoreService } from '../lib/firebase';
 
-export const AdminLogin = ({ onLogin }: { onLogin: () => void }) => {
+export const AdminLogin = ({ onLogin, onEmailLogin, onPhoneLogin }: { onLogin: () => void, onEmailLogin: () => void, onPhoneLogin: () => void }) => {
   return (
     <div className="min-h-[60vh] flex items-center justify-center p-4">
       <motion.div 
@@ -67,17 +71,39 @@ export const AdminLogin = ({ onLogin }: { onLogin: () => void }) => {
           </div>
           <div>
             <h2 className="text-2xl font-black">Espace Admin</h2>
-            <p className="text-slate-400 text-sm mt-1">Connectez-vous avec votre compte Google autorisé.</p>
+            <p className="text-slate-400 text-sm mt-1">Authentification requise pour accéder au tableau de bord.</p>
           </div>
         </div>
         
-        <button 
-          onClick={onLogin}
-          className="w-full bg-white border-2 border-slate-100 text-slate-900 font-black py-4 rounded-2xl hover:bg-slate-50 transition-all shadow-lg flex items-center justify-center gap-3"
-        >
-          <LogIn size={20} className="text-primary" />
-          Se connecter avec Google
-        </button>
+        <div className="space-y-3">
+          <button 
+            onClick={onLogin}
+            className="w-full bg-white border-2 border-slate-100 text-slate-900 font-black py-4 rounded-2xl hover:bg-slate-50 transition-all shadow-sm flex items-center justify-center gap-3"
+          >
+            <LogIn size={20} className="text-primary" />
+            Continuer avec Google
+          </button>
+          
+          <button 
+            onClick={onEmailLogin}
+            className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl hover:bg-slate-800 transition-all shadow-lg flex items-center justify-center gap-3"
+          >
+            <Mail size={20} />
+            Email / Mot de passe
+          </button>
+          
+          <button 
+            onClick={onPhoneLogin}
+            className="w-full bg-white border-2 border-slate-100 text-slate-900 font-black py-4 rounded-2xl hover:bg-slate-50 transition-all shadow-sm flex items-center justify-center gap-3"
+          >
+            <Phone size={20} />
+            Mobile (OTP)
+          </button>
+        </div>
+        
+        <p className="text-center text-[10px] text-slate-400 mt-8 font-bold uppercase tracking-widest">
+          Akwaba Info • Système de Gestion de Contenu
+        </p>
       </motion.div>
     </div>
   );
@@ -90,6 +116,7 @@ export const AdminDashboard = ({
   subscribers,
   mediaLibrary,
   settings,
+  stats,
   onEditArticle,
   onEditEvent, 
   onCreateArticle,
@@ -107,6 +134,7 @@ export const AdminDashboard = ({
   subscribers: Subscriber[],
   mediaLibrary: MediaAsset[],
   settings: SiteSettings,
+  stats?: any,
   onEditArticle: (a: Article) => void,
   onEditEvent: (e: Event) => void,
   onCreateArticle: () => void,
@@ -118,13 +146,41 @@ export const AdminDashboard = ({
   onLogout: () => void,
   onGenerateCode: () => void
 }) => {
-  const [activeTab, setActiveTab] = useState<'articles' | 'events' | 'comments' | 'subscribers' | 'media' | 'settings' | 'analytics' | 'alerts'>('articles');
+  const [activeTab, setActiveTab] = useState<'articles' | 'events' | 'comments' | 'subscribers' | 'media' | 'settings' | 'analytics' | 'alerts' | 'support'>('articles');
   const [searchTerm, setSearchTerm] = useState('');
   const [tempSettings, setTempSettings] = useState<SiteSettings>(settings);
   const [newCategory, setNewCategory] = useState('');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
   const [alertTopic, setAlertTopic] = useState('Urgent');
+
+  // Support Management
+  const [allSupportMessages, setAllSupportMessages] = useState<Record<string, SupportMessage[]>>({});
+  const [activeChatUserId, setActiveChatUserId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
+
+  useEffect(() => {
+    if (activeTab === 'support') {
+      const unsub = FirestoreService.subscribeToAllSupportMessages((userId, msgs) => {
+        setAllSupportMessages(prev => ({ ...prev, [userId]: msgs }));
+      });
+      return unsub;
+    }
+  }, [activeTab]);
+
+  const handleSendReply = async () => {
+    if (!replyText.trim() || !activeChatUserId) return;
+    const adminMsg: SupportMessage = {
+      id: Date.now().toString(),
+      userId: activeChatUserId,
+      userName: 'Support Akwaba',
+      content: replyText,
+      date: new Date().toISOString(),
+      isAdmin: true
+    };
+    setReplyText('');
+    await FirestoreService.sendSupportMessage(adminMsg);
+  };
 
   const onSendAlert = async () => {
     if (!alertTitle || !alertMessage) return;
@@ -229,6 +285,15 @@ export const AdminDashboard = ({
           Modération
         </button>
         <button 
+          onClick={() => setActiveTab('media')}
+          className={cn(
+            "px-6 py-4 font-black transition-all border-b-2 shrink-0 text-sm",
+            activeTab === 'media' ? "border-primary text-primary" : "border-transparent text-slate-400 hover:text-slate-600"
+          )}
+        >
+          Médias
+        </button>
+        <button 
           onClick={() => setActiveTab('subscribers')}
           className={cn(
             "px-6 py-4 font-black transition-all border-b-2 shrink-0 text-sm",
@@ -238,13 +303,13 @@ export const AdminDashboard = ({
           Abonnés
         </button>
         <button 
-          onClick={() => setActiveTab('media')}
+          onClick={() => setActiveTab('alerts')}
           className={cn(
             "px-6 py-4 font-black transition-all border-b-2 shrink-0 text-sm",
-            activeTab === 'media' ? "border-primary text-primary" : "border-transparent text-slate-400 hover:text-slate-600"
+            activeTab === 'alerts' ? "border-primary text-primary" : "border-transparent text-slate-400 hover:text-slate-600"
           )}
         >
-          Médias
+          Alertes Push
         </button>
         <button 
           onClick={() => setActiveTab('analytics')}
@@ -256,13 +321,13 @@ export const AdminDashboard = ({
           Statistiques
         </button>
         <button 
-          onClick={() => setActiveTab('alerts')}
+          onClick={() => setActiveTab('support')}
           className={cn(
             "px-6 py-4 font-black transition-all border-b-2 shrink-0 text-sm",
-            activeTab === 'alerts' ? "border-primary text-primary" : "border-transparent text-slate-400 hover:text-slate-600"
+            activeTab === 'support' ? "border-primary text-primary" : "border-transparent text-slate-400 hover:text-slate-600"
           )}
         >
-          Alertes Push
+          Support Client
         </button>
         <button 
           onClick={() => setActiveTab('settings')}
@@ -473,6 +538,115 @@ export const AdminDashboard = ({
                 </button>
               </div>
             </motion.div>
+          ) : activeTab === 'support' ? (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[70vh]"
+            >
+              {/* Sidebar: Chats List */}
+              <div className="lg:col-span-4 bg-white rounded-3xl border border-slate-100 shadow-xl overflow-hidden flex flex-col">
+                <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                  <h3 className="font-black italic">Support Direct</h3>
+                  <span className="bg-primary/10 text-primary text-[10px] font-black px-2 py-0.5 rounded-full">LIVE</span>
+                </div>
+                <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+                  {Object.keys(allSupportMessages).length === 0 ? (
+                    <div className="p-10 text-center space-y-4">
+                      <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center mx-auto text-slate-200">
+                        <MessageSquare size={24} />
+                      </div>
+                      <p className="text-xs text-slate-400 font-bold">Aucun chat actif.</p>
+                    </div>
+                  ) : (
+                    Object.entries(allSupportMessages).map(([userId, msgs]) => {
+                      const lastMsg = msgs[msgs.length - 1];
+                      const user = msgs.find(m => !m.isAdmin);
+                      return (
+                        <div 
+                          key={userId}
+                          onClick={() => setActiveChatUserId(userId)}
+                          className={cn(
+                            "p-5 cursor-pointer transition-all hover:bg-slate-50 flex gap-4 items-center",
+                            activeChatUserId === userId ? "bg-primary/5 border-r-4 border-primary" : ""
+                          )}
+                        >
+                          <img 
+                            src={user?.userPhoto || `https://ui-avatars.com/api/?name=${user?.userName || 'User'}`} 
+                            className="w-12 h-12 rounded-full border border-slate-100 bg-slate-50" 
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex justify-between items-center mb-1">
+                              <h4 className="font-bold text-sm truncate">{user?.userName || 'Utilisateur'}</h4>
+                              <span className="text-[9px] text-slate-400 font-bold">{format(new Date(lastMsg.date), 'HH:mm')}</span>
+                            </div>
+                            <p className="text-xs text-slate-500 truncate">{lastMsg.isAdmin ? 'Vous: ' : ''}{lastMsg.content}</p>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* main: Chat view */}
+              <div className="lg:col-span-8 bg-white rounded-3xl border border-slate-100 shadow-xl overflow-hidden flex flex-col relative">
+                {activeChatUserId ? (
+                  <>
+                    <div className="p-6 border-b border-slate-100 flex items-center gap-4 bg-slate-50/50">
+                      <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center text-primary font-black">
+                        {allSupportMessages[activeChatUserId][0]?.userName[0] || '?'}
+                      </div>
+                      <div>
+                        <h3 className="font-black text-sm">{allSupportMessages[activeChatUserId][0]?.userName}</h3>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{activeChatUserId}</p>
+                      </div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-slate-50/30 african-pattern">
+                      {allSupportMessages[activeChatUserId].map((msg) => (
+                        <div key={msg.id} className={cn("flex flex-col", msg.isAdmin ? "items-end" : "items-start")}>
+                          <div className={cn(
+                            "max-w-[70%] p-5 rounded-3xl text-sm leading-relaxed shadow-sm",
+                            msg.isAdmin ? "bg-slate-900 text-white rounded-tr-none" : "bg-white text-slate-700 rounded-tl-none border border-slate-100"
+                          )}>
+                            {msg.content}
+                          </div>
+                          <span className="text-[9px] font-black text-slate-400 mt-2 uppercase tracking-widest">
+                            {msg.isAdmin ? 'Moi (Support)' : msg.userName} • {format(new Date(msg.date), 'HH:mm')}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="p-6 border-t border-slate-100 flex gap-4 bg-white">
+                      <input 
+                        type="text" 
+                        value={replyText}
+                        onChange={e => setReplyText(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleSendReply()}
+                        placeholder="Répondre à l'utilisateur..."
+                        className="flex-1 bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-medium focus:ring-2 focus:ring-primary outline-none transition-all"
+                      />
+                      <button 
+                        onClick={handleSendReply}
+                        className="bg-primary text-white p-4 rounded-2xl shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all"
+                      >
+                        <Send size={24} />
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center p-20 text-center space-y-6">
+                    <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center text-slate-200">
+                      <Headset size={48} />
+                    </div>
+                    <div>
+                      <h3 className="text-2xl font-black italic">Gestionnaire de Support</h3>
+                      <p className="text-slate-400 font-medium max-w-sm mx-auto mt-2">Sélectionnez une discussion à gauche pour commencer à répondre aux lecteurs en temps réel.</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
           ) : activeTab === 'alerts' ? (
             <motion.div 
               initial={{ opacity: 0, y: 10 }}
@@ -558,7 +732,7 @@ export const AdminDashboard = ({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="bg-white p-8 rounded-[35px] border border-slate-100 shadow-xl space-y-2">
                   <div className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em]">Total Vues</div>
-                  <div className="text-4xl font-black italic">{articles.reduce((acc, a) => acc + (a.views || 0), 0).toLocaleString()}</div>
+                  <div className="text-4xl font-black italic">{(stats?.totalViews || articles.reduce((acc, a) => acc + (a.views || 0), 0)).toLocaleString()}</div>
                   <div className="text-emerald-500 text-[10px] font-bold">+12% cette semaine</div>
                 </div>
                 <div className="bg-white p-8 rounded-[35px] border border-slate-100 shadow-xl space-y-2">
@@ -568,8 +742,8 @@ export const AdminDashboard = ({
                 </div>
                 <div className="bg-white p-8 rounded-[35px] border border-slate-100 shadow-xl space-y-2">
                   <div className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em]">Abonnés</div>
-                  <div className="text-4xl font-black italic">{subscribers.length.toLocaleString()}</div>
-                  <div className="text-emerald-500 text-[10px] font-bold">+24 nouveaux</div>
+                  <div className="text-4xl font-black italic">{(stats?.totalSubscribers || subscribers.length).toLocaleString()}</div>
+                  <div className="text-emerald-500 text-[10px] font-bold">En progression</div>
                 </div>
               </div>
 
@@ -582,9 +756,9 @@ export const AdminDashboard = ({
                   </div>
                 </div>
                 <div className="space-y-6">
-                  {['Afrique', 'Monde', 'Politique', 'Tech', 'Sport'].map(cat => {
-                    const catArticles = articles.filter(a => a.category === cat);
-                    const catViews = catArticles.reduce((acc, a) => acc + (a.views || 0), 0);
+                  {(stats?.categoryStats || ['Afrique', 'Monde', 'Politique', 'Tech', 'Sport']).map((item: any) => {
+                    const cat = typeof item === 'string' ? item : item.name;
+                    const catViews = typeof item === 'string' ? articles.filter(a => a.category === cat).reduce((acc, a) => acc + (a.views || 0), 0) : item.count;
                     const percentage = Math.min(100, (catViews / 5000) * 100);
                     return (
                       <div key={cat} className="space-y-2">
@@ -850,6 +1024,7 @@ export const AdminEditor = ({
     scheduledAt: data.scheduledAt || '',
     audioUrl: data.audioUrl || '',
     gallery: data.gallery || [],
+    isPremium: data.isPremium || false,
     // Article specific
     ...(type === 'article' ? {
       category: data.category || 'Afrique',
@@ -1129,6 +1304,20 @@ export const AdminEditor = ({
                     />
                   </div>
                 </div>
+                {type === 'article' && (
+                  <div className="flex items-center gap-2 p-3 bg-amber-50 rounded-2xl border border-amber-100">
+                    <input 
+                      type="checkbox" 
+                      checked={formData.isPremium}
+                      onChange={e => setFormData({...formData, isPremium: e.target.checked})}
+                      className="w-5 h-5 accent-amber-600"
+                    />
+                    <div>
+                      <p className="text-[10px] font-black uppercase text-amber-700">Contenu Premium</p>
+                      <p className="text-[8px] text-amber-500">Réserver cet article aux abonnés Premium.</p>
+                    </div>
+                  </div>
+                )}
                 {type === 'event' && (
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Lieu de l'événement</label>

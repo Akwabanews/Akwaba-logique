@@ -21,6 +21,7 @@ export interface Article {
   commentsCount?: number;
   tags?: string[];
   status: 'draft' | 'published';
+  isPremium?: boolean;
   scheduledAt?: string;
   // SEO & Social
   seoTitle?: string;
@@ -56,6 +57,18 @@ export interface UserProfile {
   votedPolls: string[];
   badges: string[];
   points: number;
+  isPremium?: boolean;
+  history?: { articleId: string; date: string }[];
+}
+
+export interface ChatMessage {
+  id: string;
+  articleId: string;
+  userId: string;
+  userName: string;
+  userPhoto?: string;
+  content: string;
+  date: string;
 }
 
 export interface Event {
@@ -171,4 +184,14 @@ export interface AppNotification {
   date: string;
   read: boolean;
   type: 'article' | 'event' | 'urgent' | 'system';
+}
+
+export interface SupportMessage {
+  id: string;
+  userId: string;
+  userName: string;
+  userPhoto?: string;
+  content: string;
+  date: string;
+  isAdmin: boolean;
 }

@@ -49,14 +49,16 @@ import {
   Award,
   Flag,
   Sun,
-  Moon
+  Moon,
+  Headset,
+  ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence, useScroll, useSpring } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { MOCK_ARTICLES, MOCK_EVENTS } from './constants';
-import { Article, Comment, Event, SiteSettings, Subscriber, MediaAsset, Poll, Classified, LiveBlog, AppNotification } from './types';
+import { Article, Comment, Event, SiteSettings, Subscriber, MediaAsset, Poll, Classified, LiveBlog, AppNotification, SupportMessage } from './types';
 import { cn, optimizeImage, getYoutubeId } from './lib/utils';
 import { AdminLogin, AdminDashboard, AdminEditor, ExportModal } from './components/Admin';
 import { 
@@ -911,7 +913,7 @@ const AudioPlayer = ({ article }: { article: Article }) => {
   );
 };
 
-const ClassifiedsView = ({ classifieds, onBack }: { classifieds: Classified[], onBack: () => void }) => {
+const ClassifiedsView = ({ classifieds, onBack, onAddClick }: { classifieds: Classified[], onBack: () => void, onAddClick: () => void }) => {
   const [activeTab, setActiveTab] = useState('all');
   
   const filtered = activeTab === 'all' ? classifieds : classifieds.filter(c => c.category === activeTab);
@@ -930,7 +932,10 @@ const ClassifiedsView = ({ classifieds, onBack }: { classifieds: Classified[], o
           <h2 className="text-4xl md:text-5xl font-black italic tracking-tighter uppercase">Petites <span className="text-primary">Annonces</span></h2>
           <p className="text-slate-500 font-medium">Le marché communautaire d'Akwaba Info.</p>
         </div>
-        <button className="bg-primary text-white px-8 py-4 rounded-3xl font-bold shadow-xl shadow-primary/20 flex items-center gap-2 hover:scale-105 transition-transform">
+        <button 
+          onClick={onAddClick}
+          className="bg-primary text-white px-8 py-4 rounded-3xl font-bold shadow-xl shadow-primary/20 flex items-center gap-2 hover:scale-105 transition-transform"
+        >
           <Plus size={20} /> Publier une annonce
         </button>
       </div>
@@ -1324,6 +1329,411 @@ const NotificationCenter = ({
   );
 };
 
+const SupportChatWidget = ({ user, isDarkMode }: { user: FirebaseUser | null, isDarkMode: boolean }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [messages, setMessages] = useState<SupportMessage[]>([]);
+  const [text, setText] = useState('');
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (user && isOpen) {
+      const unsub = FirestoreService.subscribeToSupportMessages(user.uid, (msgs) => {
+        setMessages(msgs);
+      });
+      return unsub;
+    }
+  }, [user, isOpen]);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, isOpen]);
+
+  const handleSend = async () => {
+    if (!text.trim() || !user) return;
+    const msg: SupportMessage = {
+      id: Date.now().toString(),
+      userId: user.uid,
+      userName: user.displayName || 'Utilisateur',
+      userPhoto: user.photoURL || undefined,
+      content: text,
+      date: new Date().toISOString(),
+      isAdmin: false
+    };
+    setText('');
+    try {
+      await FirestoreService.sendSupportMessage(msg);
+    } catch (e) {
+      console.error("Support chat error:", e);
+    }
+  };
+
+  return (
+    <div className="fixed bottom-6 right-6 z-[200] flex flex-col items-end gap-4">
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 20, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            className={cn(
+              "w-[350px] md:w-[400px] h-[550px] rounded-[40px] shadow-2xl border flex flex-col overflow-hidden",
+              isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"
+            )}
+          >
+            {/* Header */}
+            <div className="p-8 bg-primary text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-white/20 rounded-2xl">
+                  <Headset size={24} />
+                </div>
+                <div>
+                  <h4 className="font-display font-black leading-tight text-lg">Support Akwaba</h4>
+                  <div className="flex items-center gap-1.5 opacity-70">
+                    <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
+                    <p className="text-[10px] uppercase font-black tracking-widest">En ligne</p>
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-white/20 rounded-full transition-colors">
+                <ChevronDown size={24} />
+              </button>
+            </div>
+
+            {/* Messages */}
+            <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/50 african-pattern no-scrollbar">
+              {messages.length === 0 ? (
+                <div className="text-center py-10 space-y-6">
+                   <div className="w-20 h-20 bg-primary/5 rounded-full flex items-center justify-center mx-auto text-primary/20">
+                     <MessageSquare size={40} />
+                   </div>
+                   <div className="space-y-2">
+                     <p className="text-base font-black text-slate-800">Besoin d'aide ?</p>
+                     <p className="text-xs text-slate-400 font-bold max-w-[200px] mx-auto">Posez votre question, notre équipe vous répondra dès que possible.</p>
+                   </div>
+                </div>
+              ) : (
+                messages.map((msg) => (
+                  <div key={msg.id} className={cn("flex flex-col animate-in fade-in slide-in-from-bottom-2", msg.isAdmin ? "items-start" : "items-end")}>
+                    <div className={cn(
+                      "max-w-[85%] p-4 rounded-3xl text-sm leading-relaxed",
+                      msg.isAdmin 
+                        ? "bg-white text-slate-700 rounded-tl-none border border-slate-100 shadow-sm" 
+                        : "bg-primary text-white rounded-tr-none shadow-lg shadow-primary/10"
+                    )}>
+                      {msg.content}
+                    </div>
+                    <span className="text-[8px] font-black text-slate-400 mt-2 uppercase tracking-tight opacity-60">
+                      {msg.isAdmin ? "Support Akwaba" : "Moi"} • {format(new Date(msg.date), 'HH:mm')}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className={cn(
+              "p-5 border-t flex gap-3",
+              isDarkMode ? "bg-slate-950 border-slate-800" : "bg-white border-slate-100"
+            )}>
+              <input 
+                type="text" 
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                placeholder="Écrivez ici..."
+                className="flex-1 bg-slate-100 border-none rounded-2xl px-5 py-3.5 text-sm font-medium focus:ring-2 focus:ring-primary transition-all placeholder:text-slate-400"
+              />
+              <button 
+                onClick={handleSend}
+                disabled={!text.trim() || !user}
+                className="p-3.5 bg-primary text-white rounded-2xl shadow-xl shadow-primary/20 hover:scale-105 active:scale-95 transition-all disabled:opacity-50 disabled:scale-100 flex items-center justify-center"
+              >
+                <Send size={20} />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={cn(
+          "w-16 h-16 rounded-full flex items-center justify-center shadow-[0_20px_50px_rgba(255,103,33,0.3)] transition-all hover:scale-110 active:scale-90 relative",
+          isOpen ? "bg-slate-900 text-white" : "bg-primary text-white"
+        )}
+      >
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={isOpen ? 'close' : 'open'}
+            initial={{ opacity: 0, rotate: -45 }}
+            animate={{ opacity: 1, rotate: 0 }}
+            exit={{ opacity: 0, rotate: 45 }}
+            transition={{ duration: 0.2 }}
+          >
+            {isOpen ? <X size={28} /> : <Headset size={28} />}
+          </motion.div>
+        </AnimatePresence>
+        {!isOpen && (
+          <div className="absolute top-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white animate-pulse" />
+        )}
+      </button>
+    </div>
+  );
+};
+
+const LiveChat = ({ articleId, user }: { articleId: string, user: FirebaseUser | null }) => {
+  const [messages, setMessages] = useState<any[]>([]);
+  const [newMessage, setNewMessage] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const unsub = FirestoreService.subscribeToChat(articleId, (msgs) => {
+      setMessages(msgs);
+      setTimeout(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }, 100);
+    });
+    return unsub;
+  }, [articleId]);
+
+  const handleSend = async () => {
+    if (!newMessage.trim() || !user) return;
+    const msg = {
+      id: Date.now().toString(),
+      articleId,
+      userId: user.uid,
+      userName: user.displayName || "Anonyme",
+      userPhoto: user.photoURL || undefined,
+      content: newMessage,
+      date: new Date().toISOString()
+    };
+    await FirestoreService.sendChatMessage(msg);
+    setNewMessage("");
+  };
+
+  return (
+    <div className="bg-white rounded-3xl border border-slate-100 shadow-xl overflow-hidden flex flex-col h-[500px]">
+      <div className="bg-slate-900 text-white p-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+          <h4 className="font-black text-xs uppercase tracking-widest">Chat en Direct</h4>
+        </div>
+        <span className="text-[10px] font-bold text-slate-400">{messages.length} messages</span>
+      </div>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50">
+        {messages.map((msg) => (
+          <div key={msg.id} className={cn("flex items-start gap-3", msg.userId === user?.uid ? "flex-row-reverse" : "")}>
+            <img src={msg.userPhoto || "https://ui-avatars.com/api/?name="+msg.userName} className="w-8 h-8 rounded-full border border-slate-200 object-cover" />
+            <div className={cn("max-w-[80%] p-3 rounded-2xl text-sm", msg.userId === user?.uid ? "bg-primary text-white rounded-tr-none" : "bg-white text-slate-700 shadow-sm rounded-tl-none")}>
+              <div className="text-[10px] font-black opacity-50 mb-1">{msg.userName}</div>
+              {msg.content}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="p-4 bg-white border-t border-slate-100 flex gap-2">
+        <input 
+          value={newMessage}
+          onChange={(e) => setNewMessage(e.target.value)}
+          placeholder={user ? "Écrire un message..." : "Connectez-vous pour chatter"}
+          disabled={!user}
+          className="flex-1 bg-slate-100 rounded-xl px-4 py-2 text-sm outline-none"
+          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+        />
+        <button onClick={handleSend} disabled={!user} className="p-2 bg-primary text-white rounded-xl shadow-lg disabled:opacity-50">
+          <Send size={18} />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const PremiumModal = ({ isOpen, onClose, onUpgrade }: { isOpen: boolean, onClose: () => void, onUpgrade: () => void }) => {
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[300] bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
+        >
+          <motion.div 
+            initial={{ scale: 0.9, y: 20 }}
+            animate={{ scale: 1, y: 0 }}
+            className="bg-white rounded-[40px] max-w-xl w-full p-10 text-center relative overflow-hidden"
+          >
+            <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-amber-400 via-primary to-amber-400" />
+            <div className="absolute -top-20 -right-20 w-64 h-64 bg-primary/5 rounded-full" />
+            
+            <button onClick={onClose} className="absolute top-6 right-6 text-slate-400 hover:text-slate-900 transition-colors">
+              <X size={24} />
+            </button>
+
+            <div className="w-24 h-24 bg-amber-100 text-amber-500 rounded-3xl flex items-center justify-center mx-auto mb-8 rotate-3 shadow-xl">
+              <Award size={48} />
+            </div>
+
+            <h3 className="text-4xl font-black italic tracking-tighter mb-4 uppercase">Akwaba <span className="text-primary italic">Premium</span></h3>
+            <p className="text-slate-500 font-medium mb-10">Accédez à des enquêtes exclusives, des analyses approfondies et une expérience sans publicité.</p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-10 text-left">
+               <div className="flex items-start gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <Check size={20} className="text-green-500 shrink-0 mt-0.5" />
+                  <span className="text-sm font-bold text-slate-700 leading-tight">Accès illimité aux enquêtes exclusives</span>
+               </div>
+               <div className="flex items-start gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <Check size={20} className="text-green-500 shrink-0 mt-0.5" />
+                  <span className="text-sm font-bold text-slate-700 leading-tight">Expérience 100% sans publicité</span>
+               </div>
+               <div className="flex items-start gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <Check size={20} className="text-green-500 shrink-0 mt-0.5" />
+                  <span className="text-sm font-bold text-slate-700 leading-tight">Analyses boursières et économiques</span>
+               </div>
+               <div className="flex items-start gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <Check size={20} className="text-green-500 shrink-0 mt-0.5" />
+                  <span className="text-sm font-bold text-slate-700 leading-tight">Lecture hors-ligne sur mobile</span>
+               </div>
+            </div>
+
+            <div className="flex flex-col gap-4">
+               <button 
+                 onClick={onUpgrade}
+                 className="w-full bg-primary text-white py-5 rounded-[24px] font-black text-xl shadow-2xl shadow-primary/30 hover:scale-105 transition-transform group flex items-center justify-center gap-3"
+               >
+                 DEVENIR PREMIUM
+                 <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
+               </button>
+               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">9.99 € / mois • Annulable à tout moment</p>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+};
+
+const RecommendedForYou = ({ articles, history, onArticleClick }: { articles: Article[], history: any[], onArticleClick: (a: Article) => void }) => {
+  const historySet = new Set(history.map(h => h.articleId));
+  const recommended = articles
+    .filter(a => !historySet.has(a.id))
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 4);
+
+  if (recommended.length === 0) return null;
+
+  return (
+    <div className="space-y-6 pt-10 border-t border-slate-100">
+       <h4 className="text-sm font-black uppercase tracking-widest text-primary flex items-center gap-2">
+         <TrendingUp size={16} /> Recommandés pour vous
+       </h4>
+       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {recommended.map(a => (
+            <div key={a.id} onClick={() => onArticleClick(a)} className="flex gap-4 group cursor-pointer" id={`rec-article-${a.id}`}>
+               <div className="w-24 h-24 shrink-0 rounded-2xl overflow-hidden bg-slate-100">
+                  <img src={optimizeImage(a.image || "", 200)} className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
+               </div>
+               <div className="space-y-1">
+                  <Badge category={a.category}>{a.category}</Badge>
+                  <h5 className="font-bold text-sm leading-tight group-hover:text-primary transition-colors line-clamp-2">{a.title}</h5>
+               </div>
+            </div>
+          ))}
+       </div>
+    </div>
+  );
+};
+
+const PostClassifiedModal = ({ onClose, onPost }: { onClose: () => void, onPost: (data: any) => void }) => {
+  const [formData, setFormData] = useState({
+    title: '',
+    description: '',
+    price: '',
+    category: 'emploi',
+    location: '',
+    imageUrl: ''
+  });
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[300] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+    >
+      <motion.div 
+        initial={{ scale: 0.9, y: 20 }}
+        animate={{ scale: 1, y: 0 }}
+        className="bg-white rounded-[40px] max-w-lg w-full p-8 shadow-2xl space-y-6"
+      >
+        <div className="flex justify-between items-center">
+          <h3 className="text-2xl font-black">Publier une annonce</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-900"><X size={24}/></button>
+        </div>
+
+        <div className="space-y-4">
+          <input 
+            type="text" 
+            placeholder="Titre de l'annonce"
+            className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-primary/20"
+            value={formData.title}
+            onChange={e => setFormData({...formData, title: e.target.value})}
+          />
+          <div className="grid grid-cols-2 gap-4">
+            <select 
+              className="bg-slate-50 border border-slate-100 rounded-2xl px-4 py-4 outline-none focus:ring-2 focus:ring-primary/20 text-xs"
+              value={formData.category}
+              onChange={e => setFormData({...formData, category: e.target.value})}
+            >
+              <option value="emploi">Emploi</option>
+              <option value="immobilier">Immobilier</option>
+              <option value="véhicules">Véhicules</option>
+              <option value="services">Services</option>
+              <option value="divers">Divers</option>
+            </select>
+            <input 
+              type="text" 
+              placeholder="Prix (ex: 5000 F)"
+              className="bg-slate-50 border border-slate-100 rounded-2xl px-4 py-4 outline-none focus:ring-2 focus:ring-primary/20 text-xs"
+              value={formData.price}
+              onChange={e => setFormData({...formData, price: e.target.value})}
+            />
+          </div>
+          <input 
+            type="text" 
+            placeholder="Localisation"
+            className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-primary/20 text-xs"
+            value={formData.location}
+            onChange={e => setFormData({...formData, location: e.target.value})}
+          />
+          <input 
+            type="text" 
+            placeholder="URL de l'image"
+            className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-primary/20 text-xs"
+            value={formData.imageUrl}
+            onChange={e => setFormData({...formData, imageUrl: e.target.value})}
+          />
+          <textarea 
+            placeholder="Description détaillée..."
+            className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-6 py-4 outline-none focus:ring-2 focus:ring-primary/20 h-32 resize-none text-xs"
+            value={formData.description}
+            onChange={e => setFormData({...formData, description: e.target.value})}
+          />
+        </div>
+
+        <button 
+          onClick={() => onPost(formData)}
+          className="w-full bg-primary text-white py-4 rounded-2xl font-black shadow-lg shadow-primary/20 hover:scale-[1.02] transition-transform"
+        >
+          PUBLIER L'ANNONCE
+        </button>
+      </motion.div>
+    </motion.div>
+  );
+};
+
 // --- Main App ---
 
 const SplashScreen = ({ isDarkMode }: { isDarkMode: boolean }) => {
@@ -1702,6 +2112,9 @@ export default function App() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [adminClickCount, setAdminClickCount] = useState(0);
+  const [showPremiumModal, setShowPremiumModal] = useState(false);
+  const [showClassifiedsModal, setShowClassifiedsModal] = useState(false);
+  const [adminStats, setAdminStats] = useState<any>(null);
   
   // New features state
   const [showFilters, setShowFilters] = useState(false);
@@ -1709,7 +2122,6 @@ export default function App() {
   const [filterDate, setFilterDate] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-  const [showNotificationPrompt, setShowNotificationPrompt] = useState(false);
   const [userBookmarkedArticles, setUserBookmarkedArticles] = useState<Set<string>>(new Set());
   const [userFollowedAuthors, setUserFollowedAuthors] = useState<Set<string>>(new Set());
   const [userFollowedCategories, setUserFollowedCategories] = useState<Set<string>>(new Set());
@@ -1757,6 +2169,12 @@ export default function App() {
   const unreadNotifsCount = notifications.filter(n => !n.read).length;
 
   useEffect(() => {
+    if (isAdminAuthenticated) {
+      FirestoreService.getAdminStats().then(setAdminStats);
+    }
+  }, [isAdminAuthenticated]);
+
+  useEffect(() => {
     if (currentUser) {
       const unsubscribe = FirestoreService.subscribeToNotifications(currentUser.uid, (notifs) => {
         setNotifications(notifs);
@@ -1774,6 +2192,35 @@ export default function App() {
     await FirestoreService.markNotificationAsRead(id);
   };
 
+  const handlePostClassified = async (data: Partial<Classified>) => {
+    if (!currentUser) return;
+    const newAd: Classified = {
+      id: Date.now().toString(),
+      userId: currentUser.uid,
+      username: currentUser.displayName || 'Anonyme',
+      title: data.title || '',
+      description: data.description || '',
+      price: data.price,
+      category: data.category as any || 'divers',
+      location: data.location || '',
+      contact: currentUser.email || 'N/A',
+      imageUrl: data.imageUrl,
+      date: new Date().toISOString(),
+      status: 'active'
+    };
+    
+    try {
+      await FirestoreService.saveClassified(newAd);
+      setClassifieds(prev => [newAd, ...prev]);
+      setShowClassifiedsModal(false);
+      setActiveNotification("Annonce publiée avec succès !");
+      setTimeout(() => setActiveNotification(null), 3000);
+    } catch (e) {
+      console.error(e);
+      setActiveNotification("Erreur lors de la publication.");
+    }
+  };
+
   const handleVote = async (optionId: string) => {
     if (!activePoll || hasVoted || !currentUser) {
       if (!currentUser) handleUserLogin();
@@ -1789,6 +2236,8 @@ export default function App() {
       setActivePoll({ ...activePoll, options: updatedOptions });
       setHasVoted(true);
       setActiveNotification("Vote enregistré ! Merci.");
+      await FirestoreService.awardPoints(currentUser.uid, 10);
+      setUserPoints(prev => prev + 10);
     } catch (error) {
       console.error("Poll vote error:", error);
     }
@@ -2064,9 +2513,11 @@ export default function App() {
         return next;
       });
 
-      if (isBookmarked) {
-        setActiveNotification("Article enregistré dans vos favoris !");
-      }
+    if (isBookmarked) {
+      setActiveNotification("Article enregistré dans vos favoris !");
+      await FirestoreService.awardPoints(currentUser.uid, 5);
+      setUserPoints(prev => prev + 5);
+    }
     } catch (error) {
       console.error("Bookmark article error:", error);
     }
@@ -2144,6 +2595,10 @@ export default function App() {
       setNewCommentText('');
       setReplyingTo(null);
       setActiveNotification("Votre message a été publié !");
+      if (currentUser) {
+        await FirestoreService.awardPoints(currentUser.uid, 10);
+        setUserPoints(prev => prev + 10);
+      }
     } catch (error) {
       console.error("Error adding comment:", error);
       setActiveNotification("Erreur lors de la publication.");
@@ -2175,6 +2630,8 @@ export default function App() {
 
       if (isLiked) {
         setActiveNotification("Vous avez aimé cet article !");
+        await FirestoreService.awardPoints(currentUser.uid, 5);
+        setUserPoints(prev => prev + 5);
       }
     } catch (error) {
       console.error("Like article error:", error);
@@ -2317,7 +2774,7 @@ export default function App() {
   useEffect(() => {
     const notifConsent = localStorage.getItem('notification-consent');
     if (!notifConsent) {
-      const timer = setTimeout(() => setShowNotificationPrompt(true), 5000);
+      const timer = setTimeout(() => {}, 5000);
       return () => clearTimeout(timer);
     } else if (notifConsent === 'accepted') {
       setNotificationsEnabled(true);
@@ -2337,7 +2794,6 @@ export default function App() {
   const handleNotificationConsent = (accepted: boolean) => {
     localStorage.setItem('notification-consent', accepted ? 'accepted' : 'declined');
     setNotificationsEnabled(accepted);
-    setShowNotificationPrompt(false);
   };
 
   const handleCookieConsent = (accepted: boolean) => {
@@ -2468,11 +2924,30 @@ export default function App() {
 
   const displayedSearchResults = searchResults.slice(0, visibleSearchCount);
 
-  const handleArticleClick = (article: Article) => {
+  const handleArticleClick = async (article: Article) => {
     setSelectedArticle(article);
     setCurrentView('article');
     setIsMenuOpen(false);
     window.scrollTo(0, 0);
+    
+    // Increment views
+    try {
+      await FirestoreService.incrementArticleViews(article.id);
+      
+      // Award 2 points for reading if logged in
+      if (currentUser) {
+        await FirestoreService.awardPoints(currentUser.uid, 2);
+        
+        // Add to history
+        const updatedHistory = [{ articleId: article.id, date: new Date().toISOString() }, ...(currentUser as any).history || []].slice(0, 50);
+        await FirestoreService.updateUserProfile(currentUser.uid, { 
+          ...currentUser, 
+          history: updatedHistory 
+        } as any);
+      }
+    } catch (e) {
+      console.warn("View counter error", e);
+    }
   };
 
   const handleEventClick = (event: Event) => {
@@ -2565,6 +3040,37 @@ export default function App() {
         isDarkMode={isDarkMode}
       />
 
+      <PremiumModal 
+        isOpen={showPremiumModal} 
+        onClose={() => setShowPremiumModal(false)} 
+        onUpgrade={async () => {
+          if (!currentUser) {
+            setShowPremiumModal(false);
+            handleUserLogin();
+            return;
+          }
+          try {
+            await FirestoreService.awardPoints(currentUser.uid, 500, '👑 Membre Premium');
+            const updatedUser = { ...currentUser, isPremium: true };
+            await FirestoreService.updateUserProfile(currentUser.uid, updatedUser as any);
+            setCurrentUser(updatedUser as any);
+            setShowPremiumModal(false);
+            setActiveNotification("Félicitations ! Bienvenue au club Premium.");
+          } catch (e) {
+            console.error(e);
+          }
+        }}
+      />
+
+      <AnimatePresence>
+        {showClassifiedsModal && (
+          <PostClassifiedModal 
+            onClose={() => setShowClassifiedsModal(false)}
+            onPost={handlePostClassified}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Urgent Banner */}
       {siteSettings.urgentBannerActive && siteSettings.urgentBannerText && (
         <div className="bg-red-600 text-white overflow-hidden py-3 text-xs font-black uppercase tracking-widest sticky top-0 z-[100] shadow-xl">
@@ -2588,45 +3094,7 @@ export default function App() {
         isDarkMode ? "bg-slate-950 text-white" : "bg-[#F5F1EB] text-slate-900"
       )}>
       <FlashInfo articles={FLASH_NEWS} />
-      {/* Notification Prompt */}
-      <AnimatePresence>
-        {showNotificationPrompt && (
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.9, opacity: 0 }}
-            className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
-          >
-            <div className={cn(
-              "max-w-md w-full p-8 rounded-[40px] shadow-2xl border text-center space-y-6",
-              isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"
-            )}>
-              <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto text-primary">
-                <BellRing size={40} className="animate-bounce" />
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-2xl font-black tracking-tight">Activer les notifications</h3>
-                <p className="text-slate-500 text-sm leading-relaxed">Recevez les alertes urgentes directement sur votre appareil.</p>
-              </div>
-              <div className="flex gap-4 pt-4">
-                <button 
-                  onClick={() => handleNotificationConsent(false)}
-                  className="flex-1 py-4 rounded-2xl font-bold text-slate-400 hover:bg-slate-100 transition-colors"
-                >
-                  Plus tard
-                </button>
-                <button 
-                  onClick={() => handleNotificationConsent(true)}
-                  className="flex-1 py-4 rounded-2xl font-bold bg-primary text-white shadow-lg shadow-primary/30 hover:scale-105 transition-transform"
-                >
-                  Activer
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
+      
       {/* Active Notification Toast */}
       <AnimatePresence>
         {activeNotification && (
@@ -2651,6 +3119,9 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Support Chat Widget */}
+      <SupportChatWidget user={currentUser} isDarkMode={isDarkMode} />
 
       {/* Cookie Consent Banner */}
       <AnimatePresence>
@@ -3203,6 +3674,10 @@ export default function App() {
                 { id: '2', title: "Appartement 3 pièces Cocody", description: "Bel appartement lumineux situé au coeur de Cocody.", category: 'immobilier', price: "350 000 XOF/mois", location: "Cocody, Abidjan", contact: "0504030201", username: "Marie", date: new Date().toISOString(), status: 'active' }
               ] as Classified[]}
               onBack={goHome} 
+              onAddClick={() => {
+                if(!currentUser) handleUserLogin();
+                else setShowClassifiedsModal(true);
+              }}
             />
           ) : currentView === 'article' && selectedArticle ? (
             <motion.div 
@@ -3324,10 +3799,37 @@ export default function App() {
                   </div>
                   <GoogleAd className="mb-8" />
                   
-                  <div className="markdown-body text-lg leading-relaxed">
+                  <div className="markdown-body text-lg leading-relaxed relative">
                     {(() => {
+                      const isPremiumArticle = selectedArticle.tags?.includes('Premium') || selectedArticle.isPremium;
+                      const hasAccess = !isPremiumArticle || (currentUser && (currentUser as any).isPremium);
+                      
                       const content = selectedArticle.content;
                       const paragraphs = content.split('\n\n');
+
+                      if (!hasAccess && paragraphs.length > 2) {
+                        return (
+                          <div className="space-y-6">
+                            <ReactMarkdown>{paragraphs.slice(0, 2).join('\n\n')}</ReactMarkdown>
+                            <div className="relative py-20 px-8 rounded-[40px] bg-slate-900 text-white overflow-hidden text-center space-y-6 shadow-2xl">
+                               <div className="absolute inset-0 opacity-10 safari-blur">
+                                  <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-primary/20 to-transparent" />
+                               </div>
+                               <Award size={48} className="mx-auto text-amber-500" />
+                               <h4 className="text-2xl font-black italic tracking-tighter">CONTENU RÉSERVÉ AUX MEMBRES</h4>
+                               <p className="text-slate-400 text-sm max-w-xs mx-auto">Devenez membre Premium pour lire la suite de cet article exclusif et nos analyses approfondies.</p>
+                               <button 
+                                 onClick={() => setShowPremiumModal(true)}
+                                 className="px-10 py-4 bg-primary text-white rounded-2xl font-black shadow-lg shadow-primary/20 hover:scale-105 transition-transform"
+                               >
+                                 S'ABONNER POUR LIRE LA SUITE
+                               </button>
+                               <div className="pt-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Akwaba Premium • 9.99 € / mois</div>
+                            </div>
+                          </div>
+                        );
+                      }
+
                       if (paragraphs.length > 3) {
                         return (
                           <>
@@ -3354,6 +3856,12 @@ export default function App() {
                         </>
                       );
                     })()}
+
+                    <RecommendedForYou 
+                      articles={adminArticles} 
+                      history={(currentUser as any)?.history || []} 
+                      onArticleClick={handleArticleClick} 
+                    />
                   </div>
 
                   <GoogleAd className="my-8" label="Publicité ciblée" />
@@ -3612,6 +4120,10 @@ export default function App() {
                   <div className="sticky top-24 space-y-8">
                     <ExchangeRatesWidget rates={exchangeRates} />
                     
+                    {(selectedArticle.category === 'En Direct' || selectedArticle.tags?.includes('Live')) && (
+                      <LiveChat articleId={selectedArticle.id} user={currentUser} />
+                    )}
+
                     <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100 space-y-4">
                       <div className="flex items-center gap-2 text-primary">
                          <Award size={20} />
@@ -4248,7 +4760,11 @@ Dernière mise à jour : Avril 2026
               </div>
             </motion.div>
           ) : currentView === 'admin-login' ? (
-            <AdminLogin onLogin={handleAdminLogin} />
+            <AdminLogin 
+              onLogin={handleAdminLogin} 
+              onEmailLogin={() => setShowLoginModal(true)}
+              onPhoneLogin={() => setShowLoginModal(true)}
+            />
           ) : currentView === 'admin' ? (
             !isAuthChecked ? (
               <SplashScreen isDarkMode={isDarkMode} />
@@ -4287,10 +4803,15 @@ Dernière mise à jour : Avril 2026
                   onSaveSettings={handleSaveSettings}
                   onLogout={handleAdminLogout}
                   onGenerateCode={() => setShowExportModal(true)}
+                  stats={adminStats}
                 />
               )
             ) : (
-              <AdminLogin onLogin={handleAdminLogin} />
+              <AdminLogin 
+                onLogin={handleAdminLogin} 
+                onEmailLogin={() => setShowLoginModal(true)}
+                onPhoneLogin={() => setShowLoginModal(true)}
+              />
             )
           ) : null}
         </AnimatePresence>

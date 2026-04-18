@@ -15,7 +15,8 @@ import {
   arrayRemove,
   where,
   getDocFromServer,
-  onSnapshot
+  onSnapshot,
+  collectionGroup
 } from 'firebase/firestore';
 import { 
   getAuth, 
@@ -32,7 +33,7 @@ import {
   ConfirmationResult
 } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { Article, Event, SiteSettings, Comment, Subscriber, MediaAsset, Poll, AppNotification } from '../types';
+import { Article, Event, SiteSettings, Comment, Subscriber, MediaAsset, Poll, AppNotification, SupportMessage } from '../types';
 
 // Load config from environment variables (for external deployments like Vercel)
 // or fallback to the local json file.
@@ -378,6 +379,128 @@ export const FirestoreService = {
       const notifs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as AppNotification));
       callback(notifs);
     });
+  },
+
+  async awardPoints(userId: string, points: number, badge?: string): Promise<void> {
+    if (isPlaceholder) return;
+    try {
+      const userRef = doc(db, 'users', userId);
+      const updates: any = { points: increment(points) };
+      if (badge) updates.badges = arrayUnion(badge);
+      await updateDoc(userRef, updates);
+    } catch (e) {
+      handleFirestoreError(e, 'update', `users/${userId}`);
+    }
+  },
+
+  async incrementArticleViews(articleId: string): Promise<void> {
+    if (isPlaceholder) return;
+    try {
+      await updateDoc(doc(db, 'articles', articleId), { views: increment(1) });
+    } catch (e) {
+      handleFirestoreError(e, 'update', `articles/${articleId}`);
+    }
+  },
+
+  async sendChatMessage(message: any): Promise<void> {
+    if (isPlaceholder) return;
+    try {
+      await setDoc(doc(db, `articles/${message.articleId}/chat`, message.id), message);
+    } catch (e) {
+      handleFirestoreError(e, 'create', `articles/${message.articleId}/chat/${message.id}`);
+    }
+  },
+
+  subscribeToChat(articleId: string, callback: (messages: any[]) => void) {
+    if (isPlaceholder) return () => {};
+    const q = query(
+      collection(db, `articles/${articleId}/chat`),
+      orderBy('date', 'asc')
+    );
+    return onSnapshot(q, (snapshot) => {
+      const messages = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+      callback(messages);
+    });
+  },
+
+  // Support Chat
+  async sendSupportMessage(message: SupportMessage): Promise<void> {
+    if (isPlaceholder) return;
+    try {
+      await setDoc(doc(db, `support_chats/${message.userId}/messages`, message.id), message);
+    } catch (e) {
+      handleFirestoreError(e, 'create', `support_chats/${message.userId}/messages/${message.id}`);
+    }
+  },
+
+  subscribeToSupportMessages(userId: string, callback: (messages: SupportMessage[]) => void) {
+    if (isPlaceholder) return () => {};
+    const q = query(
+      collection(db, `support_chats/${userId}/messages`),
+      orderBy('date', 'asc')
+    );
+    return onSnapshot(q, (snapshot) => {
+      const messages = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as SupportMessage));
+      callback(messages);
+    });
+  },
+
+  async getAllSupportChats(): Promise<string[]> {
+    if (isPlaceholder) return [];
+    try {
+      const snapshot = await getDocs(collection(db, 'support_chats'));
+      return snapshot.docs.map(doc => doc.id);
+    } catch (e) {
+      handleFirestoreError(e, 'list', 'support_chats');
+      return [];
+    }
+  },
+
+  subscribeToAllSupportMessages(callback: (userId: string, messages: SupportMessage[]) => void) {
+    if (isPlaceholder) return () => {};
+    // Use collection group for all messages across all user chats
+    const q = query(collectionGroup(db, 'messages'), orderBy('date', 'asc'));
+    return onSnapshot(q, (snapshot) => {
+      const groupedMessages: Record<string, SupportMessage[]> = {};
+      snapshot.docs.forEach(doc => {
+        const data = doc.data() as any;
+        const msg = { ...data, id: doc.id } as SupportMessage;
+        if (!groupedMessages[msg.userId]) groupedMessages[msg.userId] = [];
+        groupedMessages[msg.userId].push(msg);
+      });
+      Object.entries(groupedMessages).forEach(([userId, msgs]) => {
+        callback(userId, msgs);
+      });
+    });
+  },
+
+  async getAdminStats(): Promise<any> {
+    if (isPlaceholder) return null;
+    try {
+      const [articles, subs, comments] = await Promise.all([
+        getDocs(collection(db, 'articles')),
+        getDocs(collection(db, 'subscribers')),
+        getDocs(collection(db, 'comments'))
+      ]);
+      
+      const totalViews = articles.docs.reduce((sum, doc) => sum + (doc.data().views || 0), 0);
+      const categoryStats: Record<string, number> = {};
+      articles.docs.forEach(doc => {
+        const cat = doc.data().category;
+        categoryStats[cat] = (categoryStats[cat] || 0) + 1;
+      });
+
+      return {
+        totalArticles: articles.size,
+        totalSubscribers: subs.size,
+        totalComments: comments.size,
+        totalViews,
+        categoryStats
+      };
+    } catch (e) {
+       handleFirestoreError(e, 'list', 'stats');
+       return null;
+    }
   }
 };
 

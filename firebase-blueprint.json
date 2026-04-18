@@ -57,6 +57,21 @@
         "type": { "type": "string", "enum": ["article", "event", "urgent", "system"] }
       },
       "required": ["id", "title", "message", "date", "read"]
+    },
+    "SupportMessage": {
+      "title": "Message de support",
+      "description": "Un message échangé avec le support technique.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhoto": { "type": "string" },
+        "content": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "isAdmin": { "type": "boolean" }
+      },
+      "required": ["id", "userId", "userName", "content", "date", "isAdmin"]
     }
   },
   "firestore": {
@@ -75,6 +90,10 @@
     "/users/{userId}": {
       "schema": "object",
       "description": "Profils des utilisateurs."
+    },
+    "/support_chats/{userId}/messages/{msgId}": {
+      "schema": "SupportMessage",
+      "description": "Chat de support en direct pour chaque utilisateur."
     }
   }
 }
