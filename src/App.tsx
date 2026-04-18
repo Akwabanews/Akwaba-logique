@@ -1618,7 +1618,15 @@ export default function App() {
         if (cloudLiveBlogs.length > 0) setLiveBlogs(cloudLiveBlogs);
         setIsCloudLoaded(true);
       } catch (error: any) {
-        if (error.code === 'permission-denied' || error.message?.includes('offline')) {
+        let isPermissionError = false;
+        try {
+          const parsed = JSON.parse(error.message);
+          if (parsed.error && parsed.operationType) isPermissionError = true;
+        } catch (e) {
+          isPermissionError = error.code === 'permission-denied' || error.message?.includes('insufficient permissions');
+        }
+
+        if (isPermissionError || error.message?.includes('offline')) {
           console.log("Cloud Data: En attente de configuration Firebase ou de contenu initial.");
         } else {
           console.error("Error fetching cloud data:", error);

@@ -36,11 +36,12 @@ async function testConnection() {
   }
   try {
     const testDoc = doc(db, 'test_connection', 'ping');
-    await getDoc(testDoc); // Use cached getDoc first
+    await getDocFromServer(testDoc); 
     console.log(`Firebase: Connected to project ${firebaseConfig.projectId} (DB: ${(firebaseConfig as any).firestoreDatabaseId || 'default'})`);
   } catch (error: any) {
-    // If it's just a permission error on an empty DB, we don't want to spam the user interface
-    if (error.code === 'permission-denied') {
+    if (error.message && error.message.includes('the client is offline')) {
+      console.error("Please check your Firebase configuration.");
+    } else if (error.code === 'permission-denied') {
       console.log("Firebase: Readiness test - Waiting for first content or admin login.");
     } else {
       console.error("Firebase Connection Note:", error.message);
@@ -55,14 +56,22 @@ export const FirestoreService = {
   // Articles
   async getArticles(): Promise<Article[]> {
     if (isPlaceholder) return [];
-    const q = query(collection(db, 'articles'), orderBy('date', 'desc'));
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ ...doc.data() } as Article));
+    try {
+      const q = query(collection(db, 'articles'), orderBy('date', 'desc'));
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(doc => ({ ...doc.data() } as Article));
+    } catch (e) {
+      return handleFirestoreError(e, 'list', 'articles');
+    }
   },
 
   async saveArticle(article: Article): Promise<void> {
     if (isPlaceholder) return;
-    await setDoc(doc(db, 'articles', article.id), article);
+    try {
+      await setDoc(doc(db, 'articles', article.id), article);
+    } catch (e) {
+      handleFirestoreError(e, 'create', `articles/${article.id}`);
+    }
   },
 
   async deleteArticle(id: string): Promise<void> {
@@ -177,13 +186,21 @@ export const FirestoreService = {
   // User Profile
   async getUserProfile(userId: string): Promise<any> {
     if (isPlaceholder) return null;
-    const d = await getDoc(doc(db, 'users', userId));
-    return d.exists() ? d.data() : null;
+    try {
+      const d = await getDoc(doc(db, 'users', userId));
+      return d.exists() ? d.data() : null;
+    } catch (e) {
+      return handleFirestoreError(e, 'get', `users/${userId}`);
+    }
   },
 
   async updateUserProfile(userId: string, data: any): Promise<void> {
     if (isPlaceholder) return;
-    await setDoc(doc(db, 'users', userId), data, { merge: true });
+    try {
+      await setDoc(doc(db, 'users', userId), data, { merge: true });
+    } catch (e) {
+      handleFirestoreError(e, 'update', `users/${userId}`);
+    }
   },
 
   // Classifieds (Petites Annonces)
@@ -294,23 +311,35 @@ export const FirestoreService = {
   // Notifications
   async getNotifications(userId: string): Promise<AppNotification[]> {
     if (isPlaceholder) return [];
-    const q = query(
-      collection(db, 'notifications'), 
-      where('userId', 'in', [userId, 'global']),
-      orderBy('date', 'desc')
-    );
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as AppNotification));
+    try {
+      const q = query(
+        collection(db, 'notifications'), 
+        where('userId', 'in', [userId, 'global']),
+        orderBy('date', 'desc')
+      );
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as AppNotification));
+    } catch (e) {
+      return handleFirestoreError(e, 'list', 'notifications');
+    }
   },
 
   async markNotificationAsRead(id: string): Promise<void> {
     if (isPlaceholder) return;
-    await updateDoc(doc(db, 'notifications', id), { read: true });
+    try {
+      await updateDoc(doc(db, 'notifications', id), { read: true });
+    } catch (e) {
+      handleFirestoreError(e, 'update', `notifications/${id}`);
+    }
   },
 
   async sendNotification(notif: AppNotification): Promise<void> {
     if (isPlaceholder) return;
-    await setDoc(doc(db, 'notifications', notif.id), notif);
+    try {
+      await setDoc(doc(db, 'notifications', notif.id), notif);
+    } catch (e) {
+      handleFirestoreError(e, 'create', `notifications/${notif.id}`);
+    }
   },
 
   subscribeToNotifications(userId: string, callback: (notifs: AppNotification[]) => void) {
@@ -337,3 +366,49 @@ export const signInWithGoogle = async () => {
     throw error;
   }
 };
+
+export const handleUserLogout = async () => {
+  try {
+    await signOut(auth);
+  } catch (error) {
+    console.error("Error signing out:", error);
+  }
+};
+// --- Error Handlers ---
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: 'create' | 'update' | 'delete' | 'list' | 'get' | 'write';
+  path: string | null;
+  authInfo: {
+    userId: string;
+    email: string;
+    emailVerified: boolean;
+    isAnonymous: boolean;
+    providerInfo: { providerId: string; displayName: string; email: string; }[];
+  }
+}
+
+export function handleFirestoreError(error: any, operationType: FirestoreErrorInfo['operationType'], path: string | null = null): never {
+  if (error.code === 'permission-denied' || (error.message && error.message.includes('insufficient permissions'))) {
+    const user = auth.currentUser;
+    const errorInfo: FirestoreErrorInfo = {
+      error: error.message || 'Missing or insufficient permissions',
+      operationType,
+      path,
+      authInfo: {
+        userId: user?.uid || 'anonymous',
+        email: user?.email || 'N/A',
+        emailVerified: user?.emailVerified || false,
+        isAnonymous: !user,
+        providerInfo: user?.providerData.map(p => ({
+          providerId: p.providerId,
+          displayName: p.displayName || 'N/A',
+          email: p.email || 'N/A'
+        })) || []
+      }
+    };
+    throw new Error(JSON.stringify(errorInfo));
+  }
+  throw error;
+}
