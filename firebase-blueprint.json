@@ -1,0 +1,80 @@
+{
+  "entities": {
+    "Article": {
+      "title": "Article d'actualité",
+      "description": "Un article publié sur le site Akwaba Info.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID unique de l'article" },
+        "slug": { "type": "string", "description": "Slug URL unique" },
+        "title": { "type": "string", "description": "Titre" },
+        "date": { "type": "string", "format": "date-time" },
+        "category": { "type": "string", "enum": ["Afrique", "Monde", "Économie", "Politique", "Tech", "Culture", "Urgent"] },
+        "image": { "type": "string", "format": "uri" },
+        "video": { "type": "string" },
+        "author": { "type": "string" },
+        "authorRole": { "type": "string" },
+        "excerpt": { "type": "string" },
+        "content": { "type": "string" },
+        "readingTime": { "type": "string" },
+        "views": { "type": "number" },
+        "likes": { "type": "number" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["id", "slug", "title", "date", "category", "author", "content"]
+    },
+    "Event": {
+      "title": "Événement culturel",
+      "description": "Un événement ou une annonce culturelle.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "slug": { "type": "string" },
+        "title": { "type": "string" },
+        "date": { "type": "string" },
+        "location": { "type": "string" },
+        "category": { "type": "string" },
+        "image": { "type": "string" },
+        "video": { "type": "string" },
+        "excerpt": { "type": "string" },
+        "content": { "type": "string" }
+      },
+      "required": ["id", "slug", "title", "date", "location", "category", "content"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Une notification envoyée à un utilisateur ou à un groupe.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string", "description": "ID de l'utilisateur destinataire (optionnel pour les diffusions globales)" },
+        "topic": { "type": "string", "description": "Catégorie ou sujet (ex: 'Tech', 'Urgent')" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "link": { "type": "string", "description": "Lien vers l'article ou l'événement" },
+        "date": { "type": "string", "format": "date-time" },
+        "read": { "type": "boolean" },
+        "type": { "type": "string", "enum": ["article", "event", "urgent", "system"] }
+      },
+      "required": ["id", "title", "message", "date", "read"]
+    }
+  },
+  "firestore": {
+    "/articles/{articleId}": {
+      "schema": "Article",
+      "description": "Collection des articles."
+    },
+    "/events/{eventId}": {
+      "schema": "Event",
+      "description": "Collection des événements."
+    },
+    "/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "Collection des notifications."
+    },
+    "/users/{userId}": {
+      "schema": "object",
+      "description": "Profils des utilisateurs."
+    }
+  }
+}

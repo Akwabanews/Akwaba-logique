@@ -1,0 +1,94 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == 'akwabanewsinfo@gmail.com';
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Entity Validations
+    function isValidArticle(data) {
+      return data.keys().hasAll(['id', 'slug', 'title', 'date', 'category', 'author', 'content']) &&
+             data.id is string &&
+             (!('image' in data) || data.image is string) &&
+             (!('video' in data) || data.video is string);
+    }
+
+    function isValidEvent(data) {
+      return data.keys().hasAll(['id', 'slug', 'title', 'date', 'location', 'category', 'content']) &&
+             (!('image' in data) || data.image is string) &&
+             (!('video' in data) || data.video is string);
+    }
+
+    // --- COLLECTION RULES ---
+
+    // Articles
+    match /articles/{articleId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidId(articleId) && isValidArticle(incoming());
+      allow update: if isAdmin() && (incoming().id == existing().id);
+      allow delete: if isAdmin();
+    }
+
+    // Events
+    match /events/{eventId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidId(eventId) && isValidEvent(incoming());
+      allow update: if isAdmin() && (incoming().id == existing().id);
+      allow delete: if isAdmin();
+    }
+
+    // Settings
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Comments
+    match /comments/{commentId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if isAdmin();
+    }
+
+    // Subscribers
+    match /subscribers/{subId} {
+      allow create: if true;
+      allow read, delete, update: if isAdmin();
+    }
+
+    // Media Library
+    match /media/{mediaId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Connection Test
+    match /test_connection/ping {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
