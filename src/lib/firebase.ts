@@ -21,10 +21,22 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, User,
 import firebaseConfig from '../../firebase-applet-config.json';
 import { Article, Event, SiteSettings, Comment, Subscriber, MediaAsset, Poll, AppNotification } from '../types';
 
-const isPlaceholder = !firebaseConfig.projectId || firebaseConfig.projectId.includes('remixed-');
+// Load config from environment variables (for external deployments like Vercel)
+// or fallback to the local json file.
+const config = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyAY02YygUFWV4bVBQuTS-Y8qrxHLlYrfEM",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "gen-lang-client-0005221481.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "gen-lang-client-0005221481",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "gen-lang-client-0005221481.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "749252475281",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:749252475281:web:10f0674b2d28565598c230",
+  firestoreDatabaseId: import.meta.env.VITE_FIREBASE_FIRESTORE_DATABASE_ID || "ai-studio-a1c9a4e3-8a8d-440c-9fe7-a4eaf180d27c"
+};
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, (firebaseConfig as any).firestoreDatabaseId || '(default)');
+const isPlaceholder = !config.projectId || config.projectId.includes('remixed-');
+
+const app = initializeApp(config);
+export const db = getFirestore(app, config.firestoreDatabaseId || '(default)');
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
@@ -37,7 +49,7 @@ async function testConnection() {
   try {
     const testDoc = doc(db, 'test_connection', 'ping');
     await getDocFromServer(testDoc); 
-    console.log(`Firebase: Connected to project ${firebaseConfig.projectId} (DB: ${(firebaseConfig as any).firestoreDatabaseId || 'default'})`);
+    console.log(`Firebase: Connected to project ${config.projectId} (DB: ${config.firestoreDatabaseId || 'default'})`);
   } catch (error: any) {
     if (error.message && error.message.includes('the client is offline')) {
       console.error("Please check your Firebase configuration.");
