@@ -423,7 +423,7 @@ const UserProfileView = ({
         </div>
         <img 
           src={user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'User'}`} 
-          className="w-32 h-32 rounded-full border-4 border-primary shadow-xl"
+          className="w-32 h-32 rounded-full border-4 border-primary shadow-xl object-cover"
         />
         <div className="text-center md:text-left space-y-2">
           <h2 className="text-3xl font-black">{user.displayName || 'Utilisateur Akwaba'}</h2>
@@ -1657,8 +1657,7 @@ const LoginModal = ({ isOpen, onClose, onLogin, isDarkMode }: {
 export default function App() {
   const [currentView, setCurrentView] = useState<'home' | 'article' | 'search' | 'donate' | 'about' | 'privacy' | 'terms' | 'contact' | 'cookies' | 'event' | 'all-events' | 'admin' | 'admin-login' | 'webtv' | 'profile' | 'classifieds' | 'live-blog'>(() => {
     const saved = localStorage.getItem('akwaba_current_view');
-    // If it was an admin related view, we keep it to avoid redirecting away on refresh
-    if (saved === 'admin' || saved === 'admin-login' || saved === 'profile' || saved === 'classifieds' || saved === 'live-blog') return saved as any;
+    if (saved) return saved as any;
     return 'home';
   });
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
@@ -2739,6 +2738,21 @@ export default function App() {
               </div>
             </div>
             <nav className="flex flex-col gap-6">
+              {isAdminAuthenticated && (
+                <button 
+                  id="mobile-admin-dash-btn"
+                  onClick={() => { navigateTo('admin'); setIsMenuOpen(false); }}
+                  className={cn(
+                    "flex items-center gap-4 p-4 rounded-3xl mb-2",
+                    isDarkMode ? "bg-slate-800 text-primary" : "bg-primary/5 text-primary",
+                    currentView === 'admin' && "ring-2 ring-primary"
+                  )}
+                >
+                  <LayoutDashboard size={24} />
+                  <span className="font-bold">Dashboard Admin</span>
+                </button>
+              )}
+
               {currentUser ? (
                 <div 
                   onClick={() => { navigateTo('profile'); setIsMenuOpen(false); }}
@@ -2750,7 +2764,7 @@ export default function App() {
                 >
                   <img 
                     src={currentUser.photoURL || `https://ui-avatars.com/api/?name=${currentUser.displayName || 'User'}`} 
-                    className="w-12 h-12 rounded-full border-2 border-primary"
+                    className="w-12 h-12 rounded-full border-2 border-primary object-cover"
                     referrerPolicy="no-referrer"
                   />
                   <div className="flex-1">
@@ -2904,35 +2918,50 @@ export default function App() {
             <div className="h-8 w-px bg-slate-200 mx-1 hidden md:block" />
             
             {currentUser && (
-               <div className="relative">
-                  <button 
-                    onClick={() => setShowNotificationCenter(!showNotificationCenter)}
-                    className={cn(
-                      "p-3 rounded-full transition-all relative group",
-                      showNotificationCenter ? "bg-primary text-white" : "hover:bg-slate-100 text-slate-500"
-                    )}
-                  >
-                    <Bell size={22} />
-                    {unreadNotifsCount > 0 && (
-                      <span className="absolute top-2 right-2 w-4 h-4 bg-red-500 text-white text-[8px] font-black flex items-center justify-center rounded-full border-2 border-white animate-bounce">
-                        {unreadNotifsCount}
-                      </span>
-                    )}
-                  </button>
-                  <AnimatePresence>
-                    {showNotificationCenter && (
-                      <NotificationCenter 
-                        notifications={notifications}
-                        onClose={() => setShowNotificationCenter(false)}
-                        onMarkRead={handleMarkNotificationAsRead}
-                        onNavigate={(link) => {
-                          const article = adminArticles.find(a => a.id === link || a.slug === link);
-                          if (article) handleArticleClick(article);
-                          setShowNotificationCenter(false);
-                        }}
-                      />
-                    )}
-                  </AnimatePresence>
+               <div className="flex items-center gap-2">
+                 {isAdminAuthenticated && (
+                   <button 
+                     id="desktop-admin-dash-btn"
+                     onClick={() => navigateTo('admin')}
+                     className={cn(
+                       "p-3 rounded-full transition-all group",
+                       currentView === 'admin' ? "bg-primary text-white" : "hover:bg-primary/10 text-primary"
+                     )}
+                     title="Tableau de bord Admin"
+                   >
+                     <LayoutDashboard size={22} />
+                   </button>
+                 )}
+                 <div className="relative">
+                    <button 
+                      onClick={() => setShowNotificationCenter(!showNotificationCenter)}
+                      className={cn(
+                        "p-3 rounded-full transition-all relative group",
+                        showNotificationCenter ? "bg-primary text-white" : "hover:bg-slate-100 text-slate-500"
+                      )}
+                    >
+                      <Bell size={22} />
+                      {unreadNotifsCount > 0 && (
+                        <span className="absolute top-2 right-2 w-4 h-4 bg-red-500 text-white text-[8px] font-black flex items-center justify-center rounded-full border-2 border-white animate-bounce">
+                          {unreadNotifsCount}
+                        </span>
+                      )}
+                    </button>
+                    <AnimatePresence>
+                      {showNotificationCenter && (
+                        <NotificationCenter 
+                          notifications={notifications}
+                          onClose={() => setShowNotificationCenter(false)}
+                          onMarkRead={handleMarkNotificationAsRead}
+                          onNavigate={(link) => {
+                            const article = adminArticles.find(a => a.id === link || a.slug === link);
+                            if (article) handleArticleClick(article);
+                            setShowNotificationCenter(false);
+                          }}
+                        />
+                      )}
+                    </AnimatePresence>
+                 </div>
                </div>
             )}
 
@@ -2943,7 +2972,7 @@ export default function App() {
                     src={currentUser.photoURL || `https://ui-avatars.com/api/?name=${currentUser.displayName || 'User'}`} 
                     alt="User Profile" 
                     className={cn(
-                      "w-10 h-10 rounded-full border-2 transition-colors",
+                      "w-10 h-10 rounded-full border-2 transition-colors object-cover",
                       currentView === 'profile' ? "border-primary" : "border-primary/20 hover:border-primary"
                     )}
                   />
