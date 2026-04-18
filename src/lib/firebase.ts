@@ -17,7 +17,20 @@ import {
   getDocFromServer,
   onSnapshot
 } from 'firebase/firestore';
-import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, User, signOut } from 'firebase/auth';
+import { 
+  getAuth, 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  onAuthStateChanged, 
+  User, 
+  signOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  RecaptchaVerifier,
+  signInWithPhoneNumber,
+  ConfirmationResult
+} from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { Article, Event, SiteSettings, Comment, Subscriber, MediaAsset, Poll, AppNotification } from '../types';
 
@@ -375,6 +388,44 @@ export const signInWithGoogle = async () => {
     return result.user;
   } catch (error) {
     console.error("Error signing in with Google:", error);
+    throw error;
+  }
+};
+
+export const loginWithEmail = async (email: string, pass: string) => {
+  try {
+    const result = await signInWithEmailAndPassword(auth, email, pass);
+    return result.user;
+  } catch (error) {
+    console.error("Error signing in with Email:", error);
+    throw error;
+  }
+};
+
+export const registerWithEmail = async (email: string, pass: string, name: string) => {
+  try {
+    const result = await createUserWithEmailAndPassword(auth, email, pass);
+    await updateProfile(result.user, { displayName: name });
+    return result.user;
+  } catch (error) {
+    console.error("Error registering with Email:", error);
+    throw error;
+  }
+};
+
+export const setupRecaptcha = (containerId: string) => {
+  return new RecaptchaVerifier(auth, containerId, {
+    'size': 'invisible',
+    'callback': () => {}
+  });
+};
+
+export const sendPhoneOtp = async (phoneNumber: string, appVerifier: any) => {
+  try {
+    const confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, appVerifier);
+    return confirmationResult;
+  } catch (error) {
+    console.error("Error sending OTP:", error);
     throw error;
   }
 };

@@ -13,6 +13,7 @@ import {
   Globe,
   Map,
   User,
+  Mail,
   Camera,
   MessageSquare,
   X,
@@ -58,7 +59,15 @@ import { MOCK_ARTICLES, MOCK_EVENTS } from './constants';
 import { Article, Comment, Event, SiteSettings, Subscriber, MediaAsset, Poll, Classified, LiveBlog, AppNotification } from './types';
 import { cn, optimizeImage, getYoutubeId } from './lib/utils';
 import { AdminLogin, AdminDashboard, AdminEditor, ExportModal } from './components/Admin';
-import { FirestoreService, signInWithGoogle, auth } from './lib/firebase';
+import { 
+  FirestoreService, 
+  signInWithGoogle, 
+  loginWithEmail, 
+  registerWithEmail, 
+  setupRecaptcha, 
+  sendPhoneOtp, 
+  auth 
+} from './lib/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 
 // --- Components ---
@@ -1383,6 +1392,268 @@ const SplashScreen = ({ isDarkMode }: { isDarkMode: boolean }) => {
   );
 };
 
+const LoginModal = ({ isOpen, onClose, onLogin, isDarkMode }: { 
+  isOpen: boolean; 
+  onClose: () => void; 
+  onLogin: (user: FirebaseUser) => void;
+  isDarkMode: boolean;
+}) => {
+  const [authMode, setAuthMode] = useState<'options' | 'email-login' | 'email-register' | 'phone'>('options');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [otp, setOtp] = useState('');
+  const [confirmationResult, setConfirmationResult] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const resetStates = () => {
+    setAuthMode('options');
+    setEmail('');
+    setPassword('');
+    setName('');
+    setPhoneNumber('');
+    setOtp('');
+    setConfirmationResult(null);
+    setError(null);
+  };
+
+  const handleGoogleLogin = async () => {
+    setIsLoading(true);
+    try {
+      const user = await signInWithGoogle();
+      if (user) onLogin(user);
+    } catch (err: any) {
+      setError("Échec de la connexion Google");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      const user = await loginWithEmail(email, password);
+      if (user) onLogin(user);
+    } catch (err: any) {
+      setError("Identifiants incorrects");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEmailRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      const user = await registerWithEmail(email, password, name);
+      if (user) onLogin(user);
+    } catch (err: any) {
+      setError("L'inscription a échoué (vérifiez l'email et le mot de passe)");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      const verifier = setupRecaptcha('recaptcha-container');
+      const result = await sendPhoneOtp(phoneNumber, verifier);
+      setConfirmationResult(result);
+    } catch (err: any) {
+      setError("Échec de l'envoi du code SMS");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      const result = await confirmationResult.confirm(otp);
+      if (result.user) onLogin(result.user);
+    } catch (err: any) {
+      setError("Code OTP invalide");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => { resetStates(); onClose(); }}
+            className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"
+          />
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.9, opacity: 0, y: 20 }}
+            className={cn(
+              "relative w-full max-w-md p-8 rounded-[2.5rem] shadow-2xl border-4",
+              isDarkMode ? "bg-slate-900 border-white/10" : "bg-white border-slate-100"
+            )}
+          >
+            <button 
+              onClick={() => { resetStates(); onClose(); }} 
+              className="absolute top-6 right-6 p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-full transition-colors"
+            >
+              <X size={24} />
+            </button>
+
+            <div className="text-center mb-8">
+              <div className="w-16 h-16 bg-primary/10 rounded-3xl flex items-center justify-center mx-auto mb-4">
+                <User size={32} className="text-primary" />
+              </div>
+              <h2 className="text-2xl font-black">
+                {authMode === 'options' ? 'Bienvenue sur Akwaba' : 
+                 authMode === 'email-login' ? 'Connexion' : 
+                 authMode === 'email-register' ? 'Créer un compte' : 'Code de vérification'}
+              </h2>
+              <p className="text-slate-500 text-sm mt-2">Accédez à vos alertes et favoris</p>
+            </div>
+
+            {error && (
+              <div className="mb-6 p-4 bg-red-50 text-red-600 rounded-2xl text-xs font-bold flex items-center gap-3">
+                <AlertTriangle size={16} />
+                {error}
+              </div>
+            )}
+
+            <div id="recaptcha-container"></div>
+
+            {authMode === 'options' && (
+              <div className="space-y-4">
+                <button 
+                  onClick={handleGoogleLogin}
+                  disabled={isLoading}
+                  className="w-full h-14 flex items-center justify-center gap-3 bg-white border-2 border-slate-100 hover:border-primary/30 rounded-2xl transition-all shadow-sm"
+                >
+                  <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" />
+                  <span className="font-bold text-slate-700">Continuer avec Google</span>
+                </button>
+
+                <button 
+                  onClick={() => setAuthMode('email-login')}
+                  className="w-full h-14 flex items-center justify-center gap-3 bg-slate-900 text-white rounded-2xl font-bold hover:bg-slate-800 transition-all shadow-lg"
+                >
+                  <Mail size={20} />
+                  <span>Utiliser votre Email</span>
+                </button>
+
+                <button 
+                  onClick={() => setAuthMode('phone')}
+                  className="w-full h-14 flex items-center justify-center gap-3 bg-slate-100 text-slate-700 rounded-2xl font-bold hover:bg-slate-200 transition-all"
+                >
+                  <Smartphone size={20} />
+                  <span>Se connecter par Téléphone</span>
+                </button>
+              </div>
+            )}
+
+            {(authMode === 'email-login' || authMode === 'email-register') && (
+              <form onSubmit={authMode === 'email-login' ? handleEmailLogin : handleEmailRegister} className="space-y-4">
+                {authMode === 'email-register' && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Nom complet</label>
+                    <input 
+                      type="text" required value={name} onChange={(e) => setName(e.target.value)}
+                      className="w-full h-12 bg-slate-50 dark:bg-white/5 border-2 border-transparent focus:border-primary/30 rounded-2xl px-4 font-bold outline-none transition-all" placeholder="John Doe"
+                    />
+                  </div>
+                )}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Email</label>
+                  <input 
+                    type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+                    className="w-full h-12 bg-slate-50 dark:bg-white/5 border-2 border-transparent focus:border-primary/30 rounded-2xl px-4 font-bold outline-none transition-all" placeholder="email@exemple.com"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Mot de passe</label>
+                  <input 
+                    type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
+                    className="w-full h-12 bg-slate-50 dark:bg-white/5 border-2 border-transparent focus:border-primary/30 rounded-2xl px-4 font-bold outline-none transition-all" placeholder="••••••••"
+                  />
+                </div>
+                
+                <button 
+                  type="submit" disabled={isLoading}
+                  className="w-full h-14 bg-primary text-white rounded-2xl font-black shadow-lg shadow-primary/30 flex items-center justify-center gap-2 mt-4"
+                >
+                  {isLoading ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : (authMode === 'email-login' ? 'Se connecter' : "S'inscrire")}
+                </button>
+
+                <button 
+                  type="button" onClick={() => setAuthMode(authMode === 'email-login' ? 'email-register' : 'email-login')}
+                  className="w-full text-center text-xs font-bold text-slate-400 hover:text-primary transition-colors"
+                >
+                  {authMode === 'email-login' ? "Pas de compte ? S'inscrire" : "Déjà inscrit ? Connexion"}
+                </button>
+              </form>
+            )}
+
+            {authMode === 'phone' && (
+              <div className="space-y-4">
+                {!confirmationResult ? (
+                  <form onSubmit={handleSendOtp} className="space-y-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Numéro de téléphone</label>
+                      <input 
+                        type="tel" required value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)}
+                        className="w-full h-12 bg-slate-50 dark:bg-white/5 border-2 border-transparent focus:border-primary/30 rounded-2xl px-4 font-bold outline-none transition-all" placeholder="+225 00000000"
+                      />
+                    </div>
+                    <button 
+                      type="submit" disabled={isLoading}
+                      className="w-full h-14 bg-primary text-white rounded-2xl font-black shadow-lg shadow-primary/30"
+                    >
+                      {isLoading ? "Envoi..." : "Envoyer le code SMS"}
+                    </button>
+                  </form>
+                ) : (
+                  <form onSubmit={handleVerifyOtp} className="space-y-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-slate-400 ml-2">Code de vérification</label>
+                      <input 
+                        type="text" required value={otp} onChange={(e) => setOtp(e.target.value)}
+                        className="w-full h-12 bg-slate-50 dark:bg-white/5 border-2 border-transparent focus:border-primary/30 rounded-2xl px-4 font-bold outline-none transition-all text-center tracking-[0.5em] text-xl" placeholder="000000"
+                      />
+                    </div>
+                    <button 
+                      type="submit" disabled={isLoading}
+                      className="w-full h-14 bg-green-600 text-white rounded-2xl font-black shadow-lg"
+                    >
+                      {isLoading ? "Vérification..." : "Vérifier le code"}
+                    </button>
+                  </form>
+                )}
+              </div>
+            )}
+            
+            <button 
+              onClick={() => setAuthMode('options')}
+              className="mt-6 w-full text-xs font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 flex items-center justify-center gap-1"
+            >
+              <ArrowLeft size={12} /> Retour aux options
+            </button>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+};
+
 export default function App() {
   const [currentView, setCurrentView] = useState<'home' | 'article' | 'search' | 'donate' | 'about' | 'privacy' | 'terms' | 'contact' | 'cookies' | 'event' | 'all-events' | 'admin' | 'admin-login' | 'webtv' | 'profile' | 'classifieds' | 'live-blog'>(() => {
     const saved = localStorage.getItem('akwaba_current_view');
@@ -1430,6 +1701,7 @@ export default function App() {
   const [donationSuccess, setDonationSuccess] = useState(false);
   const [showCookieBanner, setShowCookieBanner] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
   const [adminClickCount, setAdminClickCount] = useState(0);
   
   // New features state
@@ -2120,14 +2392,18 @@ export default function App() {
     }
   };
 
-  const handleUserLogin = async () => {
-    try {
-      const user = await signInWithGoogle();
-      if (user) {
-        setActiveNotification(`Bienvenue, ${user.displayName || 'Utilisateur'}`);
-      }
-    } catch (error) {
-      console.error("Login error:", error);
+  const handleUserLogin = () => {
+    setShowLoginModal(true);
+  };
+
+  const handleAuthSuccess = (user: FirebaseUser) => {
+    setCurrentUser(user);
+    setShowLoginModal(false);
+    setActiveNotification(`Bienvenue, ${user.displayName || 'Utilisateur'}`);
+    
+    // Auto redirect to profile if starting from some specific views
+    if (currentView === 'admin-login') {
+      navigateTo('admin');
     }
   };
 
@@ -2282,6 +2558,13 @@ export default function App() {
       <AnimatePresence>
         {showSplash && <SplashScreen isDarkMode={isDarkMode} />}
       </AnimatePresence>
+
+      <LoginModal 
+        isOpen={showLoginModal} 
+        onClose={() => setShowLoginModal(false)} 
+        onLogin={handleAuthSuccess}
+        isDarkMode={isDarkMode}
+      />
 
       {/* Urgent Banner */}
       {siteSettings.urgentBannerActive && siteSettings.urgentBannerText && (
@@ -2482,7 +2765,7 @@ export default function App() {
                   onClick={handleUserLogin} 
                   className="flex items-center justify-center gap-2 p-4 bg-primary text-white rounded-3xl font-bold shadow-lg shadow-primary/20"
                 >
-                  <User size={24} /> Connexion avec Google
+                  <User size={24} /> Se connecter / S'ouvrir
                 </button>
               )}
 
